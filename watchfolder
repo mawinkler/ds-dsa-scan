@@ -1,0 +1,41 @@
+#!/bin/bash
+
+# sudo apt install inotify-tools -y
+
+# https://cloudone.trendmicro.com/docs/workload-security/command-line-interface/#dsa_scan
+
+monitor=/home/ubuntu/download
+logs=/home/ubuntu/watchfolder-logs
+action=quarantine
+
+mkdir -p ${logs}
+
+sudo inotifywait -r -m -e close_write ${monitor} |
+  while read file_path file_event file_name; do
+    scan_file=${file_path}${file_name}
+    scan_file_log=$(date +%s)_${scan_file//\//_}.log
+    printf "%s" "$(date): ${scan_file}" >> scan.log
+
+    sudo /opt/ds_agent/dsa_scan --action ${action} --log ${logs}/${scan_file_log} --target ${file_path}${file_name}
+    exit_code=$?
+    case ${exit_code} in
+    0)
+      echo Scan completed and no malware found.
+      printf "%s\n" " - clean" >> scan.log
+      ;;&
+    1)
+      echo Scan completed with at least one malware found.
+      printf "%s\n" " - infected, ${action}" >> scan.log
+      ;;&
+    2)
+      echo Scan completed, no malware found but some files skipped.
+      printf "%s\n" " - clean, files skipped" >> scan.log
+      ;;&
+    3)
+      echo Scan completed, but at least malware found and some files skipped.
+      printf "%s\n" " - infected, files skipped, ${action}" >> scan.log
+      ;;&
+    *)
+      echo ${file_path}${file_name}: ${exit_code}
+    esac
+  done
